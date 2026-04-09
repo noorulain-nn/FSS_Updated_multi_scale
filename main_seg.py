@@ -346,14 +346,14 @@ if __name__ == '__main__':
     print("=" * 70)
 
     # criterion = nn.CrossEntropyLoss()
-  class DiceLoss(nn.Module):
-    def forward(self, pred, target):
-        pred = torch.sigmoid(pred[:, 1])          # foreground channel
-        target = (target == 1).float()
-        intersection = (pred * target).sum()
-        return 1 - (2 * intersection + 1e-6) / (pred.sum() + target.sum() + 1e-6)
+    class DiceLoss(nn.Module):
+      def forward(self, pred, target):
+          pred = torch.sigmoid(pred[:, 1])          # foreground channel
+          target = (target == 1).float()
+          intersection = (pred * target).sum()
+          return 1 - (2 * intersection + 1e-6) / (pred.sum() + target.sum() + 1e-6)
 
-criterion = DiceLoss()
+    criterion = DiceLoss()
 
     fold = 0                                      # ← Only Fold 0
     print(f"\n{'#'*70}")
