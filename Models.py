@@ -181,23 +181,53 @@ def load_backbone_seg(backbone_name: str):
 # ─────────────────────────────────────────────────────────────────
 # MULTI-SCALE DECODER (NEW — fixes low resolution issue)
 # ─────────────────────────────────────────────────────────────────
-class SimpleMultiScaleDecoder(nn.Module):
-    """
-    Lightweight FPN-style decoder using layer3 + layer4.
-    This is the ONLY new component we add.
-    """
-    def __init__(self, in_channels=2048):   # ResNet50 layer4 channels
-        super().__init__()
-        self.conv4 = nn.Conv2d(in_channels, 256, kernel_size=1)      # layer4 (15x15)
-        self.conv3 = nn.Conv2d(1024, 256, kernel_size=1)             # layer3 (30x30)  ← added scale
-        self.fuse   = nn.Conv2d(512, 2, kernel_size=1)               # bg + fg logits
+# class SimpleMultiScaleDecoder(nn.Module):
+#     """
+#     Lightweight FPN-style decoder using layer3 + layer4.
+#     This is the ONLY new component we add.
+#     """
+#     def __init__(self, in_channels=2048):   # ResNet50 layer4 channels
+#         super().__init__()
+#         self.conv4 = nn.Conv2d(in_channels, 256, kernel_size=1)      # layer4 (15x15)
+#         self.conv3 = nn.Conv2d(1024, 256, kernel_size=1)             # layer3 (30x30)  ← added scale
+#         self.fuse   = nn.Conv2d(512, 2, kernel_size=1)               # bg + fg logits
 
-    def forward(self, feats4: torch.Tensor, feats3: torch.Tensor):
-        # feats4: [B, 2048, 15, 15]   feats3: [B, 1024, 30, 30]
-        f4 = self.conv4(feats4)
-        f4 = F.interpolate(f4, scale_factor=2, mode='bilinear', align_corners=True)  # → 30x30
-        f3 = self.conv3(feats3)
-        fused = torch.cat([f4, f3], dim=1)                               # [B, 512, 30, 30]
-        logits = self.fuse(fused)                                        # [B, 2, 30, 30]
+#     def forward(self, feats4: torch.Tensor, feats3: torch.Tensor):
+#         # feats4: [B, 2048, 15, 15]   feats3: [B, 1024, 30, 30]
+#         f4 = self.conv4(feats4)
+#         f4 = F.interpolate(f4, scale_factor=2, mode='bilinear', align_corners=True)  # → 30x30
+#         f3 = self.conv3(feats3)
+#         fused = torch.cat([f4, f3], dim=1)                               # [B, 512, 30, 30]
+#         logits = self.fuse(fused)                                        # [B, 2, 30, 30]
+#         logits = F.interpolate(logits, size=(473, 473), mode='bilinear', align_corners=True)
+#         return logits
+class MSDNetStyleDecoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Stage 1 (from 60x60 → 120x120)
+        self.stage1 = nn.Sequential(
+            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
+            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU()
+        )
+        # Stage 2 (120x120 → 240x240)
+        self.stage2 = nn.Sequential(
+            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
+            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU()
+        )
+        # Stage 3 (final refinement)
+        self.stage3 = nn.Sequential(
+            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
+            nn.Conv2d(256, 2, 1)   # bg + fg
+        )
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+
+    def forward(self, feats4, feats3):   # feats4 = layer4 (coarse), feats3 = layer3 (finer)
+        # Simple fusion like MSDNet (you can expand later)
+        x = self.stage1(feats4)
+        x = self.upsample(x)
+        x = x + F.interpolate(feats3, size=x.shape[2:], mode='bilinear', align_corners=True)
+        x = self.stage2(x)
+        x = self.upsample(x)
+        logits = self.stage3(x)
         logits = F.interpolate(logits, size=(473, 473), mode='bilinear', align_corners=True)
         return logits
