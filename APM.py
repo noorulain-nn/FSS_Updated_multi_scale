@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from Models import SimpleMultiScaleDecoder
+# from Models import SimpleMultiScaleDecoder
+from Models import MSDNetStyleDecoder
 # Memory Module
 
 class MemoryModule(nn.Module):
