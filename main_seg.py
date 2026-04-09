@@ -223,7 +223,7 @@ def test(model, test_loader, criterion):
                 mask = s_masks[b, 0]
                 
                 # NEW: encode now returns two feature maps
-                feats4, feats3 = model.encode(img)
+                feats4_reduced, feats3_reduced, feats4_raw = model.encode(img)
                 feat = feats4                                 # use feats4 for memory update
                 
                 model.memory_module.update_memory(
