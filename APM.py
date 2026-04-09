@@ -222,40 +222,62 @@ class MemoryModuleFSS(nn.Module):
 
 class SegAPM(nn.Module):
     """
-    APM-FSS with MULTI-SCALE decoder (only change from your previous version).
-    Core MemoryModuleFSS remains EXACTLY the same.
+    APM-FSS with MULTI-SCALE decoder
     """
     def __init__(self, backbone, num_classes, feature_dim, output_size=(473, 473)):
         super().__init__()
         self.backbone = backbone
         self.memory_module = MemoryModuleFSS(num_classes, feature_dim)
         self.output_size = output_size
-
-        # NEW multi-scale decoder (replaces your old seg_head)
-        # self.decoder = SimpleMultiScaleDecoder(feature_dim)   # feature_dim=2048 for ResNet50
+        
         self.decoder = MSDNetStyleDecoder()
+        
+        # === THIS IS THE IMPORTANT PART WE ADD ===
+        # Reduce 2048 channels → 256 channels (what decoder wants)
+        self.proj4 = nn.Sequential(
+            nn.Conv2d(2048, 256, kernel_size=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True)
+        )
+        
+        self.proj3 = nn.Sequential(
+            nn.Conv2d(1024, 256, kernel_size=1, bias=False),  # layer3 has 1024 channels
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True)
+        )
 
     def encode(self, imgs: torch.Tensor):
-        """Return spatial feature map + intermediate layer3 for multi-scale."""
+        """Extract features from backbone"""
         x = self.backbone.conv1(imgs)
         x = self.backbone.bn1(x)
         x = self.backbone.relu(x)
         x = self.backbone.maxpool(x)
         x = self.backbone.layer1(x)
         x = self.backbone.layer2(x)
-        feats3 = self.backbone.layer3(x)          # finer scale
-        feats4 = self.backbone.layer4(feats3)     # coarse scale
-        return feats4, feats3                     # both needed by decoder
+        feats3 = self.backbone.layer3(x)   # [B, 1024, ...]
+        feats4 = self.backbone.layer4(feats3)  # [B, 2048, ...]
+        
+        # Reduce channels so decoder is happy
+        feats4_reduced = self.proj4(feats4)
+        feats3_reduced = self.proj3(feats3)
+        
+        return feats4_reduced, feats3_reduced, feats4   # return reduced + original feats4
 
     def forward(self, imgs: torch.Tensor):
-        feats4, feats3 = self.encode(imgs)                    # multi-scale features
-        similarity_map = self.memory_module(feats4)           # pixel-wise cosine (unchanged)
-        # NEW: CMGM-style prior (exactly like paper)
-        contextual_prior = F.sigmoid(similarity_map)          # [B, 1, H', W']
-        contextual_prior = F.interpolate(contextual_prior, size=(473,473), mode='bilinear')
-
-        seg_logits = self.decoder(feats4, feats3)
-        seg_logits = seg_logits + contextual_prior   # add as soft prior
+        # Get features
+        feats4_reduced, feats3_reduced, feats4_raw = self.encode(imgs)
         
-        return seg_logits, feats4, similarity_map
-
+        # Memory module uses the rich (2048) features - better for prototypes
+        similarity_map = self.memory_module(feats4_raw)
+        
+        # Contextual prior
+        contextual_prior = F.sigmoid(similarity_map)
+        contextual_prior = F.interpolate(contextual_prior, size=(473,473), mode='bilinear', align_corners=True)
+        
+        # Decoder uses the reduced (256) features
+        seg_logits = self.decoder(feats4_reduced, feats3_reduced)
+        
+        # Add prior
+        seg_logits = seg_logits + contextual_prior
+        
+        return seg_logits, feats4_raw, similarity_map
