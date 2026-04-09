@@ -84,7 +84,7 @@ def validate(model, val_loader, criterion):
                 
                 # NEW: encode now returns two feature maps (feats4, feats3)
                 feats4, feats3 = model.encode(img)            # feats4 for memory, feats3 for decoder
-                print(f"Debug - feats4: {feats4.shape} | feats3: {feats3.shape}")   
+                # print(f"Debug - feats4: {feats4.shape} | feats3: {feats3.shape}")   
                 feat = feats4                                 # keep variable name 'feat' for update_memory
                 
                 model.memory_module.update_memory(
