@@ -35,9 +35,9 @@ FOLD         = 0                       # Pascal-5i fold 0-3
 K_SHOT       = 1                       # 1-shot (or 5 for 5-shot)
 IMG_SIZE     = 473
 NUM_CLASSES  = 1                       # binary FSS: 1 foreground class
-BATCH_SIZE   = 4
+BATCH_SIZE   = 6
 NUM_EPOCHS   = 10                      # per APM paper Table 3
-LR           = 0.001                   # per APM paper Table 3
+LR           = 0.0005                  # per APM paper Table 3
 RANDOM_SEEDS = [42, 142, 242, 342, 442]# per APM paper Table 3
 BACKBONE     = "resnet50"
 
@@ -251,89 +251,163 @@ def test(model, test_loader, criterion):
 # ── Episode loop — same 5-episode structure as APM paper ────────
 # ── Replace the episode loop at the bottom of main_seg.py ───────
 
+# if __name__ == '__main__':
+
+#     print("=" * 70)
+#     print("APM Few-Shot Segmentation — 4 folds × 5 episodes each")
+#     print("=" * 70)
+
+#     criterion = nn.CrossEntropyLoss()
+
+#     # Store results per fold
+#     all_fold_val_ious  = []
+#     all_fold_test_ious = []
+
+#     for fold in range(4):   # ← outer loop over all 4 folds
+
+#         print(f"\n{'#'*70}")
+#         print(f"FOLD {fold}/3")
+#         print(f"{'#'*70}")
+
+#         fold_val_ious  = []
+#         fold_test_ious = []
+
+#         for ep_idx, seed in enumerate(RANDOM_SEEDS):
+
+#             print(f"\n{'='*70}")
+#             print(f"FOLD {fold} | EPISODE {ep_idx+1}/5 | seed={seed}")
+#             print(f"{'='*70}\n")
+
+#             torch.manual_seed(seed)
+#             np.random.seed(seed)
+#             random.seed(seed)
+
+#             # Load data for this fold and seed
+#             train_loader, val_loader, test_loader, _ = \
+#                 Data_Loader.prepare_pascal5i(
+#                     DATA_ROOT,
+#                     fold=fold,          # ← changes each outer iteration
+#                     k_shot=K_SHOT,
+#                     img_size=IMG_SIZE,
+#                     batch_size=BATCH_SIZE,
+#                     seed=seed
+#                 )
+
+#             backbone, feat_dim = Models.load_backbone_seg(BACKBONE)
+#             model = APM.SegAPM(
+#                 backbone,
+#                 num_classes=NUM_CLASSES,
+#                 feature_dim=feat_dim,
+#                 output_size=(IMG_SIZE, IMG_SIZE)
+#             ).to(device)
+
+#             optimizer = optim.Adam(model.parameters(), lr=LR)
+#             scheduler = StepLR(optimizer, step_size=1, gamma=0.30)
+
+#             val_iou  = train(model, train_loader, val_loader,
+#                               criterion, optimizer, scheduler,
+#                               NUM_EPOCHS, ep_idx)
+#             test_iou = test(model, test_loader, criterion)
+
+#             fold_val_ious.append(val_iou)
+#             fold_test_ious.append(test_iou)
+
+#             print(f"Fold {fold} Episode {ep_idx+1}: "
+#                   f"val_IoU={val_iou:.4f}  test_IoU={test_iou:.4f}")
+
+#         # Per-fold summary (averaged over 5 episodes)
+#         fold_val_mean  = float(np.mean(fold_val_ious))
+#         fold_test_mean = float(np.mean(fold_test_ious))
+#         all_fold_val_ious.append(fold_val_mean)
+#         all_fold_test_ious.append(fold_test_mean)
+
+#         print(f"\nFold {fold} result: "
+#               f"val_IoU={fold_val_mean:.4f}  test_IoU={fold_test_mean:.4f}")
+
+#     # Final result — mean over all 4 folds (this is the number you report)
+#     print(f"\n{'='*70}")
+#     print("FINAL RESULTS — mean over all 4 folds × 5 episodes")
+#     print(f"{'='*70}")
+#     for f in range(4):
+#         print(f"  Fold {f}: val={all_fold_val_ious[f]:.4f}  "
+#               f"test={all_fold_test_ious[f]:.4f}")
+#     print(f"\nOverall val  mean-IoU: {np.mean(all_fold_val_ious):.4f} "
+#           f"± {np.std(all_fold_val_ious):.4f}")
+#     print(f"Overall test mean-IoU: {np.mean(all_fold_test_ious):.4f} "
+#           f"± {np.std(all_fold_test_ious):.4f}")
+#     print(f"\nConfig: Pascal-5i, {K_SHOT}-shot, backbone={BACKBONE}")
+#     print("=" * 70)
+# ── Episode loop — ONLY FOLD 0 + 5 episodes (Recommended for remaining time) ─────
 if __name__ == '__main__':
 
     print("=" * 70)
-    print("APM Few-Shot Segmentation — 4 folds × 5 episodes each")
+    print("APM Few-Shot Segmentation — FOLD 0 ONLY × 5 episodes")
     print("=" * 70)
 
     criterion = nn.CrossEntropyLoss()
 
-    # Store results per fold
-    all_fold_val_ious  = []
-    all_fold_test_ious = []
+    fold = 0                                      # ← Only Fold 0
+    print(f"\n{'#'*70}")
+    print(f"RUNNING ONLY FOLD {fold}")
+    print(f"{'#'*70}")
 
-    for fold in range(4):   # ← outer loop over all 4 folds
+    fold_val_ious  = []
+    fold_test_ious = []
 
-        print(f"\n{'#'*70}")
-        print(f"FOLD {fold}/3")
-        print(f"{'#'*70}")
+    for ep_idx, seed in enumerate(RANDOM_SEEDS):   # This will run all 5 seeds
 
-        fold_val_ious  = []
-        fold_test_ious = []
+        print(f"\n{'='*70}")
+        print(f"FOLD {fold} | EPISODE {ep_idx+1}/5 | seed={seed}")
+        print(f"{'='*70}\n")
 
-        for ep_idx, seed in enumerate(RANDOM_SEEDS):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
-            print(f"\n{'='*70}")
-            print(f"FOLD {fold} | EPISODE {ep_idx+1}/5 | seed={seed}")
-            print(f"{'='*70}\n")
+        # Load data for Fold 0
+        train_loader, val_loader, test_loader, _ = \
+            Data_Loader.prepare_pascal5i(
+                DATA_ROOT,
+                fold=fold,
+                k_shot=K_SHOT,
+                img_size=IMG_SIZE,
+                batch_size=BATCH_SIZE,
+                seed=seed
+            )
 
-            torch.manual_seed(seed)
-            np.random.seed(seed)
-            random.seed(seed)
+        backbone, feat_dim = Models.load_backbone_seg(BACKBONE)
+        model = APM.SegAPM(
+            backbone,
+            num_classes=NUM_CLASSES,
+            feature_dim=feat_dim,
+            output_size=(IMG_SIZE, IMG_SIZE)
+        ).to(device)
 
-            # Load data for this fold and seed
-            train_loader, val_loader, test_loader, _ = \
-                Data_Loader.prepare_pascal5i(
-                    DATA_ROOT,
-                    fold=fold,          # ← changes each outer iteration
-                    k_shot=K_SHOT,
-                    img_size=IMG_SIZE,
-                    batch_size=BATCH_SIZE,
-                    seed=seed
-                )
+        # ←←← Better optimizer for less overfitting (Recommended)
+        optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
+        scheduler = StepLR(optimizer, step_size=1, gamma=0.30)
 
-            backbone, feat_dim = Models.load_backbone_seg(BACKBONE)
-            model = APM.SegAPM(
-                backbone,
-                num_classes=NUM_CLASSES,
-                feature_dim=feat_dim,
-                output_size=(IMG_SIZE, IMG_SIZE)
-            ).to(device)
+        val_iou  = train(model, train_loader, val_loader,
+                         criterion, optimizer, scheduler,
+                         NUM_EPOCHS, ep_idx)
+        
+        test_iou = test(model, test_loader, criterion)
 
-            optimizer = optim.Adam(model.parameters(), lr=LR)
-            scheduler = StepLR(optimizer, step_size=1, gamma=0.30)
+        fold_val_ious.append(val_iou)
+        fold_test_ious.append(test_iou)
 
-            val_iou  = train(model, train_loader, val_loader,
-                              criterion, optimizer, scheduler,
-                              NUM_EPOCHS, ep_idx)
-            test_iou = test(model, test_loader, criterion)
+        print(f"Fold {fold} Episode {ep_idx+1}: "
+              f"val_IoU={val_iou:.4f}  test_IoU={test_iou:.4f}")
 
-            fold_val_ious.append(val_iou)
-            fold_test_ious.append(test_iou)
+    # ── Final result for Fold 0 only ─────────────────────────────────
+    fold_val_mean  = float(np.mean(fold_val_ious))
+    fold_test_mean = float(np.mean(fold_test_ious))
 
-            print(f"Fold {fold} Episode {ep_idx+1}: "
-                  f"val_IoU={val_iou:.4f}  test_IoU={test_iou:.4f}")
-
-        # Per-fold summary (averaged over 5 episodes)
-        fold_val_mean  = float(np.mean(fold_val_ious))
-        fold_test_mean = float(np.mean(fold_test_ious))
-        all_fold_val_ious.append(fold_val_mean)
-        all_fold_test_ious.append(fold_test_mean)
-
-        print(f"\nFold {fold} result: "
-              f"val_IoU={fold_val_mean:.4f}  test_IoU={fold_test_mean:.4f}")
-
-    # Final result — mean over all 4 folds (this is the number you report)
     print(f"\n{'='*70}")
-    print("FINAL RESULTS — mean over all 4 folds × 5 episodes")
+    print(f"FINAL RESULTS — FOLD 0 (5 episodes)")
     print(f"{'='*70}")
-    for f in range(4):
-        print(f"  Fold {f}: val={all_fold_val_ious[f]:.4f}  "
-              f"test={all_fold_test_ious[f]:.4f}")
-    print(f"\nOverall val  mean-IoU: {np.mean(all_fold_val_ious):.4f} "
-          f"± {np.std(all_fold_val_ious):.4f}")
-    print(f"Overall test mean-IoU: {np.mean(all_fold_test_ious):.4f} "
-          f"± {np.std(all_fold_test_ious):.4f}")
-    print(f"\nConfig: Pascal-5i, {K_SHOT}-shot, backbone={BACKBONE}")
+    print(f"  Fold 0: val={fold_val_mean:.4f}  test={fold_test_mean:.4f}")
+    print(f"\nOverall val  mean-IoU: {fold_val_mean:.4f} ± {np.std(fold_val_ious):.4f}")
+    print(f"Overall test mean-IoU: {fold_test_mean:.4f} ± {np.std(fold_test_ious):.4f}")
+    print(f"\nConfig: Pascal-5i, {K_SHOT}-shot, backbone={BACKBONE}, Fold 0 only")
     print("=" * 70)
