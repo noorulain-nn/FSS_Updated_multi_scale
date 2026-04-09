@@ -249,6 +249,12 @@ class SegAPM(nn.Module):
     def forward(self, imgs: torch.Tensor):
         feats4, feats3 = self.encode(imgs)                    # multi-scale features
         similarity_map = self.memory_module(feats4)           # pixel-wise cosine (unchanged)
-        seg_logits = self.decoder(feats4, feats3)             # ← NEW multi-scale path
+        # NEW: CMGM-style prior (exactly like paper)
+        contextual_prior = F.sigmoid(similarity_map)          # [B, 1, H', W']
+        contextual_prior = F.interpolate(contextual_prior, size=(473,473), mode='bilinear')
+
+        seg_logits = self.decoder(feats4, feats3)
+        seg_logits = seg_logits + contextual_prior   # add as soft prior
+        
         return seg_logits, feats4, similarity_map
 
