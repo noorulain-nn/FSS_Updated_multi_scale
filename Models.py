@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from torchvision import models
+import torch.nn.functional as F
+import torchvision.models as models
 
 def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
     """
