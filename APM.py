@@ -231,7 +231,8 @@ class SegAPM(nn.Module):
         self.output_size = output_size
 
         # NEW multi-scale decoder (replaces your old seg_head)
-        self.decoder = SimpleMultiScaleDecoder(feature_dim)   # feature_dim=2048 for ResNet50
+        # self.decoder = SimpleMultiScaleDecoder(feature_dim)   # feature_dim=2048 for ResNet50
+        self.decoder = MSDNetStyleDecoder()
 
     def encode(self, imgs: torch.Tensor):
         """Return spatial feature map + intermediate layer3 for multi-scale."""
