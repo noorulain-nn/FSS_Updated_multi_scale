@@ -21,7 +21,8 @@ import Data_Loader
 import Models
 import APM
 import PLOT
-
+import warnings
+warnings.filterwarnings('ignore', category=SyntaxWarning)
 # ── Device ──────────────────────────────────────────────────────
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
