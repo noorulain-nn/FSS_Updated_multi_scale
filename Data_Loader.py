@@ -1811,7 +1811,7 @@ class Pascal5iEpisodic(torch.utils.data.Dataset):
         )
 
 
-def prepare_pascal5i(data_root, fold=0, k_shot=1, img_size=473,
+def prepare_pascal5i(data_root, fold=0, k_shot=5, img_size=473,
                      n_train_episodes=2000, n_test_episodes=1000,
                      val_fraction=0.1, batch_size=6, seed=42):
     """
