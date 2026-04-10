@@ -32,7 +32,7 @@ if torch.cuda.is_available():
 
 # ── Config ──────────────────────────────────────────────────────
 DATA_ROOT = "./data/fss-data"
-K_SHOT = 1
+K_SHOT = 5
 IMG_SIZE = 473
 NUM_CLASSES = 1
 BATCH_SIZE = 6
