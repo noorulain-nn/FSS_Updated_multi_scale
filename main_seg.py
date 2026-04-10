@@ -81,7 +81,7 @@ def validate(model, val_loader, criterion):
                 img = s_imgs[b, 0].unsqueeze(0).to(device)
                 mask = s_masks[b, 0]
                 _, _, feats4_raw = model.encode(img)
-                model.memory_module.update_memory(feats4_raw, mask, class_label=0)
+                model.memory_module.update_memory(feats4_raw, mask.cpu(), class_label=0)
             
             q_imgs = q_imgs.to(device)
             q_masks = q_masks.long().to(device)
@@ -97,8 +97,10 @@ def validate(model, val_loader, criterion):
             
     return total_loss / count, total_iou / count
 
-# ── Train ───────────────────────────────────────────────────────
-def train(model, train_loader, val_loader, criterion, optimizer, scheduler, num_epochs, episode):
+# ── Training function (UPDATED with Query Loss) ─────────────────────────────
+def train(model, train_loader, val_loader,
+          criterion, optimizer, scheduler,
+          num_epochs, episode):
     train_losses, val_losses = [], []
     train_ious, val_ious = [], []
     
@@ -110,28 +112,50 @@ def train(model, train_loader, val_loader, criterion, optimizer, scheduler, num_
         
         for s_imgs, s_masks, q_imgs, q_masks in train_loader:
             B = s_imgs.shape[0]
-            support_img = s_imgs[:, 0].to(device)
-            support_mask = s_masks[:, 0]
+            
+            # Support images (used for memory update + main loss)
+            support_img = s_imgs[:, 0].to(device)      # [B, 3, H, W]  (1-shot) or first shot
+            support_mask = s_masks[:, 0].to(device)    # [B, H, W]
+            
+            # Query images (used ONLY for additional loss - this is the key fix)
+            query_img = q_imgs.to(device)              # [B, 3, H, W]
+            query_mask = q_masks.long().to(device)     # [B, H, W]
             
             optimizer.zero_grad()
-            seg_logits, features, _ = model(support_img)
             
-            loss = criterion(seg_logits, support_mask.long().to(device))
+            # 1. Forward on Support (for memory & main loss)
+            seg_logits_support, features_support, _ = model(support_img)
+            
+            # Main loss on support
+            loss_support = criterion(seg_logits_support, support_mask)
+            
+            # 2. Forward on Query (for generalization)
+            seg_logits_query, _, _ = model(query_img)
+            loss_query = criterion(seg_logits_query, query_mask)
+            
+            # Combined loss: 70% support + 30% query
+            loss = 0.7 * loss_support + 0.3 * loss_query
+            
             loss.backward()
             optimizer.step()
             
+            # 3. Memory update using support only (no gradient)
             with torch.no_grad():
                 for b in range(B):
                     model.memory_module.update_memory(
-                        features[b:b+1].detach(), support_mask[b], class_label=0
+                        features_support[b:b+1].detach(),
+                        support_mask[b].cpu(),      # mask should be on CPU for update_memory
+                        class_label=0
                     )
             
-            pred = seg_logits.argmax(dim=1)
+            # Metrics (we still compute on support for monitoring)
+            pred = seg_logits_support.argmax(dim=1)
             run_loss += loss.item() * B
             for b in range(B):
                 run_iou += compute_iou(pred[b].cpu(), support_mask[b].cpu())
             count += B
         
+        # Epoch summary
         epoch_loss = run_loss / count
         epoch_iou = run_iou / count
         val_loss, val_iou = validate(model, val_loader, criterion)
@@ -147,10 +171,10 @@ def train(model, train_loader, val_loader, criterion, optimizer, scheduler, num_
         
         scheduler.step()
     
+    # Plots
     PLOT.plot_bias_variance_curve(train_losses, val_losses)
     PLOT.plot_accuracy(train_ious, val_ious)
     return float(np.mean(val_ious))
-
 # ── Test ────────────────────────────────────────────────────────
 def test(model, test_loader, criterion):
     model.eval()
