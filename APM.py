@@ -94,7 +94,7 @@ class SegAPM(nn.Module):
         
         # Stronger contextual prior
         prior = F.interpolate(similarity_map, size=(473, 473), mode='bilinear', align_corners=True)
-        prior = torch.sigmoid(prior) * 0.7                # scaled to avoid overpowering decoder
+        prior = torch.sigmoid(prior) * 0.25                
         
         # Decoder prediction
         seg_logits = self.decoder(feats4_reduced, feats3_reduced)
