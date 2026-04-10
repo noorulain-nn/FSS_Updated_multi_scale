@@ -243,7 +243,7 @@ if __name__ == '__main__':
         ).to(device)
         
         optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
-        scheduler = StepLR(optimizer, step_size=5, gamma=0.8)   # Slower decay
+        scheduler = StepLR(optimizer, step_size=8, gamma=0.8)   # Slower decay
         
         val_iou = train(model, train_loader, val_loader, criterion, optimizer, scheduler, NUM_EPOCHS, ep_idx)
         test_iou = test(model, test_loader, criterion)
