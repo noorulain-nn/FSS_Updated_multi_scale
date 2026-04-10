@@ -1728,7 +1728,7 @@ class Pascal5iEpisodic(torch.utils.data.Dataset):
     n_episodes controls how many episodes are pre-generated.
     All episodes are deterministic given the seed.
     """
-    def __init__(self, pascal5i_reader, k_shot=1,
+    def __init__(self, pascal5i_reader, k_shot=5,
                  img_size=473, n_episodes=1000, seed=42):
         self.reader     = pascal5i_reader
         self.k_shot     = k_shot
