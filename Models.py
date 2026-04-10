@@ -155,79 +155,100 @@ def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
 # SEGMENTATION BACKBONE  (added for FSS)
 # ─────────────────────────────────────────────────────────────────
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.models as models
+
+# ─────────────────────────────────────────────────────────────────
+# SEGMENTATION BACKBONE (for FSS)
+# ─────────────────────────────────────────────────────────────────
 def load_backbone_seg(backbone_name: str):
-    """
-    UPDATED: returns BOTH layer4 (coarse) and layer3 (finer) for multi-scale.
-    """
     name = backbone_name.lower().strip()
     def _pretrained(ctor):
-        try: return ctor(weights="IMAGENET1K_V1")
-        except: return ctor(pretrained=True)
+        try: 
+            return ctor(weights="IMAGENET1K_V1")
+        except: 
+            return ctor(pretrained=True)
 
     if name in {"resnet18", "resnet34", "resnet50", "resnet101"}:
         ctor = {"resnet18": models.resnet18, "resnet34": models.resnet34,
                 "resnet50": models.resnet50, "resnet101": models.resnet101}[name]
         m = _pretrained(ctor)
 
+        # Train only layer3 and layer4 (standard for FSS)
         for n, p in m.named_parameters():
-            if not n.startswith(("layer4.", "layer3.")):   # ← now train layer3+4
+            if not n.startswith(("layer4.", "layer3.")):
                 p.requires_grad = False
 
-        # Return the full ResNet up to layer4, but we will extract layer3/layer4 inside SegAPM
-        return m, 2048   # feature_dim still 2048 (layer4)
+        return m, 2048   # feature_dim for memory module (layer4)
 
-    # ... (rest of your existing code for other backbones remains unchanged)
     raise ValueError(f"Unsupported backbone_name: {backbone_name!r}")
-# ─────────────────────────────────────────────────────────────────
-# MULTI-SCALE DECODER (NEW — fixes low resolution issue)
-# ─────────────────────────────────────────────────────────────────
-# class SimpleMultiScaleDecoder(nn.Module):
-#     """
-#     Lightweight FPN-style decoder using layer3 + layer4.
-#     This is the ONLY new component we add.
-#     """
-#     def __init__(self, in_channels=2048):   # ResNet50 layer4 channels
-#         super().__init__()
-#         self.conv4 = nn.Conv2d(in_channels, 256, kernel_size=1)      # layer4 (15x15)
-#         self.conv3 = nn.Conv2d(1024, 256, kernel_size=1)             # layer3 (30x30)  ← added scale
-#         self.fuse   = nn.Conv2d(512, 2, kernel_size=1)               # bg + fg logits
 
-#     def forward(self, feats4: torch.Tensor, feats3: torch.Tensor):
-#         # feats4: [B, 2048, 15, 15]   feats3: [B, 1024, 30, 30]
-#         f4 = self.conv4(feats4)
-#         f4 = F.interpolate(f4, scale_factor=2, mode='bilinear', align_corners=True)  # → 30x30
-#         f3 = self.conv3(feats3)
-#         fused = torch.cat([f4, f3], dim=1)                               # [B, 512, 30, 30]
-#         logits = self.fuse(fused)                                        # [B, 2, 30, 30]
-#         logits = F.interpolate(logits, size=(473, 473), mode='bilinear', align_corners=True)
-#         return logits
-class MSDNetStyleDecoder(nn.Module):
+
+# ─────────────────────────────────────────────────────────────────
+# IMPROVED DECODER (Stronger FPN-style)
+# ─────────────────────────────────────────────────────────────────
+class ImprovedFPNDecoder(nn.Module):
+    """
+    Stronger decoder than the previous MSDNetStyleDecoder.
+    Uses better fusion + deeper refinement.
+    """
     def __init__(self):
         super().__init__()
-        # Stage 1 (from 60x60 → 120x120)
-        self.stage1 = nn.Sequential(
-            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
-            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU()
+        
+        # Layer4 (coarse) refinement
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True)
         )
-        # Stage 2 (120x120 → 240x240)
-        self.stage2 = nn.Sequential(
-            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
-            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU()
+        
+        # Layer3 (finer) refinement
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True)
         )
-        # Stage 3 (final refinement)
-        self.stage3 = nn.Sequential(
-            nn.Conv2d(256, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
-            nn.Conv2d(256, 2, 1)   # bg + fg
+        
+        # Final refinement head
+        self.refine = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 2, kernel_size=1)   # bg + fg
         )
+        
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-    def forward(self, feats4, feats3):   # feats4 = layer4 (coarse), feats3 = layer3 (finer)
-        # Simple fusion like MSDNet (you can expand later)
-        x = self.stage1(feats4)
-        x = self.upsample(x)
-        x = x + F.interpolate(feats3, size=x.shape[2:], mode='bilinear', align_corners=True)
-        x = self.stage2(x)
-        x = self.upsample(x)
-        logits = self.stage3(x)
-        logits = F.interpolate(logits, size=(473, 473), mode='bilinear', align_corners=True)
+    def forward(self, feats4_reduced, feats3_reduced):
+        """
+        feats4_reduced: [B, 256, ~15, ~15]
+        feats3_reduced: [B, 256, ~30, ~30]
+        """
+        # Process coarse features
+        f4 = self.conv4(feats4_reduced)
+        f4 = self.upsample(f4)                    # → ~30x30
+        
+        # Fuse with finer features
+        f3 = self.conv3(feats3_reduced)
+        fused = f4 + f3                           # residual fusion
+        
+        # Refine
+        x = self.refine(fused)
+        x = self.upsample(x)                      # → ~60x60
+        x = self.upsample(x)                      # → ~120x120
+        
+        # Final upsample to original size
+        logits = F.interpolate(x, size=(473, 473), mode='bilinear', align_corners=True)
+        
         return logits
+
+
+# (You can keep the old load_backbone if needed for classification, but it's not used here)
